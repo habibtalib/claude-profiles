@@ -15,6 +15,9 @@
 #     claude-profile-sync [name]    re-push shared MCP servers into profile(s)
 #     claude-profile-share-sessions [name]  share conversation history so --resume/-c
 #                                   in a profile sees all accounts' sessions
+#     claude-profile-detach <name> [--empty] <item...>  make a shared item bespoke
+#                                   (own CLAUDE.md / settings.json / private history)
+#     claude-profile-attach <name> <item...>  re-share a bespoke item with main
 #     claude-profile-doctor         report credential isolation + per-profile login state
 #
 # Config (optional, set before sourcing):
@@ -164,6 +167,52 @@ claude-profile-share-sessions() {
     _claude_profile_link_sessions "$d"; echo "history shared -> $target"
   fi
   echo "(reverse by removing the symlink and restoring the matching *.preshare.bak)"
+}
+
+# ---- claude-profile-detach <name> [--empty] <item...>: make item(s) bespoke ----
+# Turns a shared symlink into a copy the profile OWNS, so it can diverge from main.
+#   claude-profile-detach work CLAUDE.md            # own instructions (copied from main)
+#   claude-profile-detach work settings.json        # own model/theme/plugins
+#   claude-profile-detach work --empty projects sessions history.jsonl   # private history
+claude-profile-detach() {
+  local name="$1"; shift 2>/dev/null
+  local empty=0; [ "$1" = "--empty" ] && { empty=1; shift; }
+  local dir="$CLAUDE_PROFILES_DIR/$name"
+  [ -d "$dir" ] || { echo "no profile '$name'"; return 1; }
+  [ $# -gt 0 ] || { echo "usage: claude-profile-detach <name> [--empty] <item>..."; return 1; }
+  local item t src
+  for item in "$@"; do
+    t="$dir/$item"; src="$CLAUDE_PRIMARY_DIR/$item"
+    if [ -e "$t" ] && [ ! -L "$t" ]; then echo "already bespoke: $item"; continue; fi
+    rm -rf "$t"                                   # drop the symlink (not its target)
+    if [ $empty -eq 1 ]; then
+      if [ -d "$src" ]; then mkdir -p "$t"; else : > "$t"; fi
+      echo "detached (fresh/empty): $item"
+    elif [ -e "$src" ]; then
+      cp -RL "$src" "$t" && echo "detached (copied from main): $item"
+    else
+      echo "main has no '$item' — nothing to copy (left absent)"
+    fi
+  done
+  echo "note: mcpServers still auto-sync into .claude.json on launch; detach doesn't affect that."
+}
+
+# ---- claude-profile-attach <name> <item...>: re-share bespoke item(s) with main ----
+# Reverse of detach: the profile's own copy is set aside (<item>.bespoke.bak) and re-linked.
+claude-profile-attach() {
+  local name="$1"; shift 2>/dev/null
+  local dir="$CLAUDE_PROFILES_DIR/$name"
+  [ -d "$dir" ] || { echo "no profile '$name'"; return 1; }
+  [ $# -gt 0 ] || { echo "usage: claude-profile-attach <name> <item>..."; return 1; }
+  local item t src
+  for item in "$@"; do
+    t="$dir/$item"; src="$CLAUDE_PRIMARY_DIR/$item"
+    [ -L "$t" ] && { echo "already shared: $item"; continue; }
+    [ -e "$src" ] || { echo "main has no '$item'"; continue; }
+    [ -e "$t" ] && mv "$t" "$t.bespoke.bak"
+    ln -s "$src" "$t"
+    echo "re-shared with main: $item (own copy -> $item.bespoke.bak)"
+  done
 }
 
 # ---- internal: is a config dir logged in? (creds are isolated per dir) ----

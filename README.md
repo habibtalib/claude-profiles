@@ -100,6 +100,33 @@ first. To revert a profile, delete the symlink and restore its `.preshare.bak`.
 > Sharing history means every account can see every account's conversations via `--resume`.
 > That's the point here, but keep it off if you want accounts kept fully separate.
 
+## Bespoke profiles (own config, not mirrored from main)
+
+Every shared item is a symlink to your primary `~/.claude`, so a profile normally mirrors main.
+To let one profile diverge — its own instructions, its own model/plugins, or private history —
+**detach** just those items; the rest stays shared.
+
+```zsh
+claude-profile-detach work CLAUDE.md         # work gets its own instructions (copied from main)
+claude-profile-detach work settings.json     # its own model / theme / enabled plugins
+claude-profile-detach work --empty projects sessions history.jsonl session-env shell-snapshots tasks
+                                             # private history: this profile keeps its own, starting fresh
+```
+
+`detach` replaces the symlink with a copy the profile owns (edit it freely). `--empty` starts
+the item blank instead of copying main's — use it for a private, unshared history on one profile
+even while `CLAUDE_PROFILE_SHARE_SESSIONS` is on globally.
+
+Reverse any of it with **attach** (the bespoke copy is set aside as `<item>.bespoke.bak`):
+
+```zsh
+claude-profile-attach work CLAUDE.md
+```
+
+So a profile is shared by default and bespoke exactly where you say. Note: your MCP servers live
+in each profile's `.claude.json` and are re-synced from main on launch, so MCP stays uniform;
+detaching other items doesn't change that.
+
 ## Configuration
 
 Set these in `~/.zshrc` **before** the `source` line:
