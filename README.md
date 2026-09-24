@@ -21,10 +21,11 @@ Claude Code has no first-party account switcher yet ([anthropics/claude-code#446
 | Shared across all accounts (symlinked) | Isolated per account |
 | --- | --- |
 | `settings.json`, `plugins`, `skills`, `agents`, `commands`, `hooks`, `output-styles`, `CLAUDE.md` | login / credentials |
-| your user-scoped MCP servers (seeded + kept in sync) | conversation history, `projects`, `todos`, sessions |
+| your user-scoped MCP servers (seeded + kept in sync) | conversation history, `projects`, sessions |
 | plus anything in `CLAUDE_PROFILE_SHARE_EXTRA` | account identity (`oauthAccount`) |
 
-History being per-account is intentional — `--resume` / `-c` in a profile only ever sees that account's conversations.
+History is per-account by default — `--resume` / `-c` in a profile only sees that account's
+conversations. To share it across all accounts instead, see [Shared history](#shared-history-resume-across-accounts).
 
 ## Install
 
@@ -54,7 +55,8 @@ ccp work --dangerously-skip-permissions
 
 claude-profile-ls              # see every profile and the account it's on
 claude-profile-sync --all      # re-push MCP servers after adding one to your primary
-claude-profile-doctor          # report the credential strategy on this machine
+claude-profile-share-sessions --all   # share conversation history (opt-in; see below)
+claude-profile-doctor          # show credential isolation + which profiles are logged in
 ```
 
 **Rule:** the profile name is always the first argument — `ccp work --resume`, never `ccp --resume work`.
@@ -72,6 +74,32 @@ Run `claude-profile-doctor` to see which profiles are logged in.
 
 > Older write-ups claimed the macOS Keychain item was global and shared across accounts. That was true of earlier Claude Code builds; current versions hash the config-dir path into the service name, so profiles are fully isolated.
 
+## Shared history (`--resume` across accounts)
+
+By default each account has its own conversation history. If you'd rather have `--resume` and
+`-c` (continue) reach **the same conversations from any account**, turn on session sharing —
+it symlinks the session stores (`projects`, `sessions`, `session-env`, `shell-snapshots`,
+`tasks`, `history.jsonl`) to your primary.
+
+For new profiles, set the flag before sourcing:
+
+```zsh
+export CLAUDE_PROFILE_SHARE_SESSIONS=1
+source "$HOME/.claude-profiles-src/claude-profiles.zsh"
+```
+
+For profiles you already created:
+
+```zsh
+claude-profile-share-sessions --all      # or: claude-profile-share-sessions work
+```
+
+It's non-destructive — any existing per-profile history is moved to `<item>.preshare.bak`
+first. To revert a profile, delete the symlink and restore its `.preshare.bak`.
+
+> Sharing history means every account can see every account's conversations via `--resume`.
+> That's the point here, but keep it off if you want accounts kept fully separate.
+
 ## Configuration
 
 Set these in `~/.zshrc` **before** the `source` line:
@@ -81,6 +109,7 @@ Set these in `~/.zshrc` **before** the `source` line:
 | `CLAUDE_PROFILES_DIR` | `~/.claude-profiles` | where profile dirs live |
 | `CLAUDE_PRIMARY_DIR` | `~/.claude` | your primary config dir / source of truth |
 | `CLAUDE_PROFILE_SHARE_EXTRA` | *(empty)* | extra items under the primary dir to symlink, space-separated |
+| `CLAUDE_PROFILE_SHARE_SESSIONS` | *(empty)* | if non-empty, new profiles share conversation history (`--resume` / `-c` see all accounts' sessions) |
 
 Example — also share a custom plugin directory:
 

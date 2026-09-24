@@ -13,13 +13,17 @@
 #     claude-profile <name> [args]  launch Claude as that account   (alias: ccp)
 #     claude-profile-ls             list profiles + which account each is on
 #     claude-profile-sync [name]    re-push shared MCP servers into profile(s)
-#     claude-profile-doctor         report the macOS credential strategy in effect
+#     claude-profile-share-sessions [name]  share conversation history so --resume/-c
+#                                   in a profile sees all accounts' sessions
+#     claude-profile-doctor         report credential isolation + per-profile login state
 #
 # Config (optional, set before sourcing):
 #     CLAUDE_PROFILES_DIR            where profiles live      (default ~/.claude-profiles)
 #     CLAUDE_PRIMARY_DIR            your main config dir      (default ~/.claude)
 #     CLAUDE_PROFILE_SHARE_EXTRA    extra items to symlink, space-separated
 #                                   e.g. export CLAUDE_PROFILE_SHARE_EXTRA=".my-plugin notes.md"
+#     CLAUDE_PROFILE_SHARE_SESSIONS if non-empty, new profiles share conversation history
+#                                   (--resume / -c see every account's sessions)
 
 export CLAUDE_PROFILES_DIR="${CLAUDE_PROFILES_DIR:-$HOME/.claude-profiles}"
 export CLAUDE_PRIMARY_DIR="${CLAUDE_PRIMARY_DIR:-$HOME/.claude}"
@@ -30,6 +34,24 @@ export CLAUDE_PRIMARY_DIR="${CLAUDE_PRIMARY_DIR:-$HOME/.claude}"
 _CLAUDE_SHARED=(settings.json plugins skills agents commands hooks output-styles CLAUDE.md)
 # user-supplied extras (zsh word-splits the env var)
 [ -n "$CLAUDE_PROFILE_SHARE_EXTRA" ] && _CLAUDE_SHARED+=(${(z)CLAUDE_PROFILE_SHARE_EXTRA})
+
+# Session/history items linked when CLAUDE_PROFILE_SHARE_SESSIONS is non-empty, so that
+# `--resume` / `-c` (continue) see the SAME conversations across every profile + primary.
+# Off by default: each account normally keeps its own history.
+_CLAUDE_SESSION_SHARED=(projects sessions session-env shell-snapshots tasks history.jsonl)
+
+# Symlink the session set from the primary into a profile (non-destructive: any existing
+# real file/dir is moved to <item>.preshare.bak first; already-linked items are left alone).
+_claude_profile_link_sessions() {
+  local dir="$1" item src dst
+  for item in "${_CLAUDE_SESSION_SHARED[@]}"; do
+    src="$CLAUDE_PRIMARY_DIR/$item"; dst="$dir/$item"
+    { [ -e "$src" ] || [ -L "$src" ]; } || continue
+    [ -L "$dst" ] && continue
+    [ -e "$dst" ] && mv "$dst" "$dst.preshare.bak"
+    ln -s "$src" "$dst"
+  done
+}
 
 # Where the primary account's config JSON lives (HOME root when CLAUDE_CONFIG_DIR is unset).
 _claude_primary_json() {
@@ -75,9 +97,11 @@ claude-profile-add() {
     [ -e "$CLAUDE_PRIMARY_DIR/$item" ] && ln -s "$CLAUDE_PRIMARY_DIR/$item" "$dir/$item"
   done
   _claude_profile_sync_json "$dir/.claude.json"
+  [ -n "$CLAUDE_PROFILE_SHARE_SESSIONS" ] && _claude_profile_link_sessions "$dir"
   echo ""
   echo "✅ profile '$name' created: $dir"
   echo "   shared (symlinked): ${_CLAUDE_SHARED[*]}"
+  [ -n "$CLAUDE_PROFILE_SHARE_SESSIONS" ] && echo "   history shared: --resume / -c will see all accounts' conversations"
   echo "   next: run  claude-profile $name   then  /login  with that account (one time)."
 }
 
@@ -123,6 +147,23 @@ claude-profile-sync() {
     [ -d "$dir" ] || { echo "no profile '$target'"; return 1; }
     _claude_profile_sync_json "$dir/.claude.json"
   fi
+}
+
+# ---- claude-profile-share-sessions [name|--all]: share history with existing profile(s) ----
+# Makes `--resume` / `-c` in the profile see the primary account's conversations too.
+# Non-destructive: each profile's prior session data is moved to <item>.preshare.bak.
+claude-profile-share-sessions() {
+  local target="${1:---all}" d
+  if [ "$target" = "--all" ]; then
+    for d in "$CLAUDE_PROFILES_DIR"/*(/N); do
+      _claude_profile_link_sessions "$d"; echo "history shared -> ${d:t}"
+    done
+  else
+    d="$CLAUDE_PROFILES_DIR/$target"
+    [ -d "$d" ] || { echo "no profile '$target'"; return 1; }
+    _claude_profile_link_sessions "$d"; echo "history shared -> $target"
+  fi
+  echo "(reverse by removing the symlink and restoring the matching *.preshare.bak)"
 }
 
 # ---- internal: is a config dir logged in? (creds are isolated per dir) ----
